@@ -1,13 +1,24 @@
 package main
 
 import (
-	"io"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl/scram"
+
+	"github.com/joho/godotenv"
 )
+
+var producer *kafka.Writer
 
 type WebhookPayload struct {
 	AspectType     string         `json:"aspect_type"`
@@ -16,19 +27,21 @@ type WebhookPayload struct {
 	ObjectType     string         `json:"object_type"`
 	OwnerID        int64          `json:"owner_id"`
 	SubscriptionID int64          `json:"subscription_id"`
-	Updates        map[string]any `json:"updates"`
-}
-
-type KafkaPayload struct {
-	ObjectID int64 `json:"object_id"`
-	OwnerID  int64 `json:"owner_id"`
+	Updates        map[string]any `json:"updates,omitempty"`
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Warning: .env not loaded")
+	}
+
+	connectKafka()
+
 	r := gin.Default()
 
-	r.GET("/webhook/strava", handleWebhookGet)
-	r.POST("/webhook/strava", handleWebhookPost)
+	r.GET("/webhook/strava", ControllerWebhookSubscriber)
+	r.POST("/webhook/strava", ControllerWebhookReceiver)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -39,7 +52,7 @@ func main() {
 	log.Fatal(r.Run(":" + port))
 }
 
-func handleWebhookGet(c *gin.Context) {
+func ControllerWebhookSubscriber(c *gin.Context) {
 	challenge := c.Query("hub.challenge")
 
 	if challenge == "" {
@@ -54,32 +67,71 @@ func handleWebhookGet(c *gin.Context) {
 	})
 }
 
-func handleWebhookPost(c *gin.Context) {
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "failed to read body",
-		})
+func ControllerWebhookReceiver(c *gin.Context) {
+	var payload WebhookPayload
+
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		log.Printf("Invalid JSON: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 		return
 	}
 
-	log.Printf("Webhook received: %s", string(body))
-
-	var payload WebhookPayload
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		log.Printf("Invalid JSON: %v", err)
-	} else {
-		log.Printf("Parsed payload: %+v", payload)
-	}
+	log.Printf("Parsed payload: %+v", payload)
 
 	if payload.ObjectType == "activity" && payload.AspectType == "create" {
-		kafkaPayload := KafkaPayload{
-			ObjectID: payload.ObjectID,
-			OwnerID:  payload.OwnerID,
-		}
-
-		log.Printf("Would send to Kafka: %+v", kafkaPayload)
+		sendMessage(payload)
 	}
 
 	c.Status(http.StatusOK)
+}
+
+func connectKafka() *kafka.Writer {
+	CA_CERT := os.Getenv("CA_CERT")
+	KAFKA_TOPIC := os.Getenv("KAFKA_TOPIC")
+	KAFKA_USERNAME := os.Getenv("KAFKA_USERNAME")
+	KAFKA_PASSWORD := os.Getenv("KAFKA_PASSWORD")
+	KAFKA_BROKER := os.Getenv("KAFKA_BROKER")
+
+	caCertPool := x509.NewCertPool()
+	ok := caCertPool.AppendCertsFromPEM([]byte(CA_CERT))
+	if !ok {
+		log.Fatalf("Failed to parse CA certificate")
+	}
+
+	tlsConfig := &tls.Config{
+		RootCAs: caCertPool,
+	}
+
+	scram, err := scram.Mechanism(scram.SHA512, KAFKA_USERNAME, KAFKA_PASSWORD)
+	if err != nil {
+		log.Fatalf("Failed to create scram mechanism: %s", err)
+	}
+
+	dialer := &kafka.Dialer{
+		Timeout:       10 * time.Second,
+		DualStack:     true,
+		TLS:           tlsConfig,
+		SASLMechanism: scram,
+	}
+
+	producer = kafka.NewWriter(kafka.WriterConfig{
+		Brokers:  []string{KAFKA_BROKER},
+		Topic:    KAFKA_TOPIC,
+		Balancer: &kafka.Hash{},
+		Dialer:   dialer,
+	})
+
+	return producer
+}
+
+func sendMessage(payload WebhookPayload) {
+	message := kafka.Message{Value: fmt.Appendf(nil, `{"object_id": %d, "owner_id": %d}`, payload.ObjectID, payload.OwnerID)}
+
+	err := producer.WriteMessages(context.Background(), message)
+
+	if err != nil {
+		log.Printf("failed to write message: %s", err)
+	} else {
+		log.Printf("message sent to Kafka topic: %s", string(message.Value))
+	}
 }
