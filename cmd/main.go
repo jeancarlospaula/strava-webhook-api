@@ -1,58 +1,34 @@
 package main
 
 import (
-	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/gin-gonic/gin"
 )
 
-func webhookHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		challenge := r.URL.Query().Get("hub.challenge")
+type WebhookPayload struct {
+	AspectType     string         `json:"aspect_type"`
+	EventTime      int64          `json:"event_time"`
+	ObjectID       int64          `json:"object_id"`
+	ObjectType     string         `json:"object_type"`
+	OwnerID        int64          `json:"owner_id"`
+	SubscriptionID int64          `json:"subscription_id"`
+	Updates        map[string]any `json:"updates"`
+}
 
-		if challenge == "" {
-			http.Error(w, "missing challenge", http.StatusBadRequest)
-			return
-		}
-
-		response := map[string]string{
-			"hub.challenge": challenge,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-		return
-	}
-
-	if r.Method == http.MethodPost {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "failed to read body", http.StatusBadRequest)
-			return
-		}
-
-		log.Printf("Webhook received: %s", string(body))
-
-		var payload map[string]interface{}
-		if err := json.Unmarshal(body, &payload); err != nil {
-			log.Printf("Invalid JSON: %v", err)
-		} else {
-			log.Printf("Parsed payload: %+v", payload)
-		}
-
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+type KafkaPayload struct {
+	ObjectID int64 `json:"object_id"`
+	OwnerID  int64 `json:"owner_id"`
 }
 
 func main() {
-	mux := http.NewServeMux()
+	r := gin.Default()
 
-	mux.HandleFunc("/webhook/strava", webhookHandler)
+	r.GET("/webhook/strava", handleWebhookGet)
+	r.POST("/webhook/strava", handleWebhookPost)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -60,5 +36,50 @@ func main() {
 	}
 
 	log.Printf("Server running on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	log.Fatal(r.Run(":" + port))
+}
+
+func handleWebhookGet(c *gin.Context) {
+	challenge := c.Query("hub.challenge")
+
+	if challenge == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "missing challenge",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"hub.challenge": challenge,
+	})
+}
+
+func handleWebhookPost(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "failed to read body",
+		})
+		return
+	}
+
+	log.Printf("Webhook received: %s", string(body))
+
+	var payload WebhookPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		log.Printf("Invalid JSON: %v", err)
+	} else {
+		log.Printf("Parsed payload: %+v", payload)
+	}
+
+	if payload.ObjectType == "activity" && payload.AspectType == "create" {
+		kafkaPayload := KafkaPayload{
+			ObjectID: payload.ObjectID,
+			OwnerID:  payload.OwnerID,
+		}
+
+		log.Printf("Would send to Kafka: %+v", kafkaPayload)
+	}
+
+	c.Status(http.StatusOK)
 }
