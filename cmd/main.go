@@ -16,7 +16,7 @@ func main() {
 	if os.Getenv("ENV") != "production" {
 		err := godotenv.Load()
 		if err != nil {
-			log.Println("Warning: .env not loaded")
+			log.Println("Aviso: .env não foi carregado")
 		}
 	}
 
@@ -34,6 +34,6 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Server running on :%s", port)
+	log.Printf("Servidor rodando na porta :%s", port)
 	log.Fatal(r.Run(":" + port))
 }

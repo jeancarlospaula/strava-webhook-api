@@ -21,10 +21,10 @@ func (ws *WebhookService) ProcessWebhookPayload(payload entities.WebhookPayload)
 
 	err := infra.SendMessageJSON(simplifiedPayload)
 	if err != nil {
-		log.Printf("Failed to send webhook payload to Kafka: %v", err)
+		log.Printf("Falha ao enviar payload do webhook para Kafka: %v", err)
 		return err
 	}
 
-	log.Printf("Processed webhook payload: %+v", payload)
+	log.Printf("Payload do webhook processado: %+v", payload)
 	return nil
 }

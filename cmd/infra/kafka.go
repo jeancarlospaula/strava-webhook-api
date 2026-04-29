@@ -25,7 +25,7 @@ func ConnectKafka() *kafka.Writer {
 	caCertPool := x509.NewCertPool()
 	ok := caCertPool.AppendCertsFromPEM([]byte(KAFKA_CA_CERT))
 	if !ok {
-		log.Fatalf("Failed to parse CA certificate")
+		log.Fatalf("Falha ao carregar certificado CA do Kafka")
 	}
 
 	tlsConfig := &tls.Config{
@@ -34,7 +34,7 @@ func ConnectKafka() *kafka.Writer {
 
 	scramMechanism, err := scram.Mechanism(scram.SHA512, KAFKA_USERNAME, KAFKA_PASSWORD)
 	if err != nil {
-		log.Fatalf("Failed to create scram mechanism: %s", err)
+		log.Fatalf("Falha ao criar mecanismo scram: %s", err)
 	}
 
 	dialer := &kafka.Dialer{
@@ -59,18 +59,18 @@ func SendMessage(data []byte) error {
 
 	err := producer.WriteMessages(context.Background(), message)
 	if err != nil {
-		log.Printf("failed to write message: %s", err)
+		log.Printf("Falha ao enviar mensagem: %s", err)
 		return err
 	}
 
-	log.Printf("message sent to Kafka topic")
+	log.Printf("Mensagem enviada para o tópico do Kafka")
 	return nil
 }
 
 func SendMessageJSON(data any) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		log.Printf("failed to marshal data to JSON: %s", err)
+		log.Printf("Falha ao serializar dados para JSON: %s", err)
 		return err
 	}
 
