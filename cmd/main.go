@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 
 	infra "strava-webhook-api/cmd/infra"
@@ -12,7 +13,7 @@ import (
 )
 
 func main() {
-	if os.Getenv("ENV") == "development" {
+	if os.Getenv("ENV") != "production" {
 		err := godotenv.Load()
 		if err != nil {
 			log.Println("Warning: .env not loaded")
@@ -23,6 +24,10 @@ func main() {
 
 	r := gin.Default()
 	routes.RegisterWebhookRoutes(r)
+
+	r.GET("/health", func(c *gin.Context) {
+		c.String(http.StatusOK, "OK")
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {
