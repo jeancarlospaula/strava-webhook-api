@@ -25,7 +25,7 @@ func main() {
 	r := gin.Default()
 	routes.RegisterWebhookRoutes(r)
 
-	r.GET("/health", func(c *gin.Context) {
+	r.HEAD("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "OK")
 	})
 
