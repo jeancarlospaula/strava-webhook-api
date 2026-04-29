@@ -16,14 +16,14 @@ import (
 var producer *kafka.Writer
 
 func ConnectKafka() *kafka.Writer {
-	CA_CERT := os.Getenv("CA_CERT")
+	KAFKA_CA_CERT := os.Getenv("KAFKA_CA_CERT")
 	KAFKA_TOPIC := os.Getenv("KAFKA_TOPIC")
 	KAFKA_USERNAME := os.Getenv("KAFKA_USERNAME")
 	KAFKA_PASSWORD := os.Getenv("KAFKA_PASSWORD")
 	KAFKA_BROKER := os.Getenv("KAFKA_BROKER")
 
 	caCertPool := x509.NewCertPool()
-	ok := caCertPool.AppendCertsFromPEM([]byte(CA_CERT))
+	ok := caCertPool.AppendCertsFromPEM([]byte(KAFKA_CA_CERT))
 	if !ok {
 		log.Fatalf("Failed to parse CA certificate")
 	}

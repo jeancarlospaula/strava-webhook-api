@@ -12,9 +12,11 @@ import (
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("Warning: .env not loaded")
+	if os.Getenv("ENV") == "development" {
+		err := godotenv.Load()
+		if err != nil {
+			log.Println("Warning: .env not loaded")
+		}
 	}
 
 	infra.ConnectKafka()
