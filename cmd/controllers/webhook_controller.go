@@ -42,12 +42,14 @@ func (wc *webhookController) ControllerWebhookReceiver(c *gin.Context) {
 		return
 	}
 
-	err := wc.webhookService.ProcessWebhookPayload(payload)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to process webhook",
-		})
-		return
+	if payload.ObjectType == "activity" && payload.AspectType == "create" {
+		err := wc.webhookService.ProcessWebhookPayload(payload)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "failed to process webhook",
+			})
+			return
+		}
 	}
 
 	c.Status(http.StatusOK)
